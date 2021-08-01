@@ -17,15 +17,16 @@ first_release = 900
 try:
     future_release = int(sys.argv[1])
 except IndexError:
-    # future_release = 1239
-    future_release = 1243
+    future_release = 1400
 
 url_pattern = 'https://www.stoloto.ru/ruslotto/archive/{}'
-get_numbers_xpath_pattern = '//div[@class="data_table"]//tbody/tr[{}]/td[2]/text()'
-not_dropping_nums_xpath = '//p[text()="Невыпавшие числа: "]/strong/text()'
+count_of_nums_in_tour_xpath = 'count(//div[@class="results_table"]//tbody/tr[{}]/td[2]/span)'
+num_in_tour_xpath = '//div[@class="results_table"]//tbody/tr[{}]/td[2]/span[{}]/text()'
+count_of_not_dropping_xpath = 'count(//div[@class="drawing_win_numbers barrels"]/ul/li)'
+not_dropping_nums_xpath = '//div[@class="drawing_win_numbers barrels"]/ul/li[{}]/text()'
 pattern_of_number = re.compile('[0-9]')
 all_release_of_lotto = range(first_release, future_release)
-not_dropping_numbers = ''
+not_dropping_numbers_full = []
 
 
 # Получение выпавших чисел всех архивных тиражей, которые выпал в первых семи турах
@@ -40,21 +41,25 @@ def get_numbers_of_all_releases():
     return numbers_of_all_releases
 
 
-# Получение всех выпавших чисел в первых семи турах одного тиража (обработка html-страницы, поиск gj xpath)
+# Получение всех выпавших чисел в первых семи турах одного тиража (обработка html-страницы, поиск по xpath)
 def get_numbers_of_seven_tours(page):
-    global not_dropping_numbers
     numbers_of_tours = []
-    not_dropping_numbers_list_temp = page.xpath(not_dropping_nums_xpath)
-    not_dropping_numbers += not_dropping_numbers_list_temp[0] + ', '
+    get_not_dropping_numbers(page)
     for tour in range(1, 8):
-        # С помощью xpath находим на HTML странице числа в таблице результата в зависимости от номера тура
-        numbers_of_tour = page.xpath(get_numbers_xpath_pattern.format(tour))
-        numbers_of_tour_list = str(numbers_of_tour).split(',')
-        # Удаляем из списка все лишние символы и оставляем только числа
-        clean_list_of_number = [parse_list_to_str(pattern_of_number.findall(number), '') for number in
-                                numbers_of_tour_list]
-        numbers_of_tours.append(parse_list_to_str(clean_list_of_number, ','))
+        # в каждом туре получаем количество выпавших чисел и циклом собираем все эти значения и добавляем в общий список
+        count_of_nums_in_tour = int(page.xpath(count_of_nums_in_tour_xpath.format(tour)))
+        numbers_of_tour_list = [page.xpath(num_in_tour_xpath.format(tour, serial_num))[0] for serial_num in range(1, count_of_nums_in_tour + 1)]
+        numbers_of_tours.append(parse_list_to_str(numbers_of_tour_list, ','))
     return numbers_of_tours
+
+
+def get_not_dropping_numbers(page):
+    global not_dropping_numbers_full
+    # узнаем количество невыпавших чисел, потом считываем значения и добавляем в список
+    count_of_not_dropping = int(page.xpath(count_of_not_dropping_xpath))
+    not_dropping_nums = [page.xpath(not_dropping_nums_xpath.format(serial))[0] for serial in
+                         range(1, count_of_not_dropping + 1)]
+    not_dropping_numbers_full += not_dropping_nums
 
 
 def parse_list_to_str(list, split_char):
@@ -68,24 +73,26 @@ def write_results_in_file(results, text):
     file.close()
 
 
-all_numbers = get_numbers_of_all_releases()
-str_of_all_numbers = parse_list_to_str(all_numbers, ',')
-counter_of_dropping = Counter(str_of_all_numbers.split(','))
-# Сортировка по убыванию кол-ва вхождений
-final_results_for_dropping = counter_of_dropping.most_common(50)
-formatted_dropping = str(final_results_for_dropping) \
-    .replace('),', '\n') \
-    .replace('(', '   ') \
-    .replace('[', ' ') \
-    .replace(']', ' ')
-write_results_in_file(formatted_dropping, "'number', count of dropping out\n")
+if __name__ == '__main__':
+    all_numbers = get_numbers_of_all_releases()
+    str_of_all_numbers = parse_list_to_str(all_numbers, ',')
+    # в общем списке выпавших чисел считаем количество вхождение каждого в общий список и затем сортируем по убыванию
+    counter_of_dropping = Counter(str_of_all_numbers.split(','))
+    # Сортировка по убыванию кол-ва вхождений
+    final_results_for_dropping = counter_of_dropping.most_common(50)
+    formatted_dropping = str(final_results_for_dropping) \
+        .replace('),', '\n') \
+        .replace('(', '   ') \
+        .replace('[', ' ') \
+        .replace(']', ' ')
+    write_results_in_file(formatted_dropping, "'number', count of dropping out\n")
 
-clear_str_not_dropping_nums = not_dropping_numbers.strip('\r\n,')
-counter_of_not_dropping = Counter(clear_str_not_dropping_nums.split(', '))
-final_results_for_not_dropping = counter_of_not_dropping.most_common(50)
-formatted_not_dropping = str(final_results_for_not_dropping) \
-    .replace('),', '\n') \
-    .replace('(', '   ') \
-    .replace('[', ' ') \
-    .replace(']', ' ')
-write_results_in_file(formatted_not_dropping, "\n'number', count of not dropping out\n")
+    # в общем списке невыпавших чисел считаем количество вхождение каждого в общий список и затем сортируем по убыванию
+    counter_of_not_dropping = Counter(not_dropping_numbers_full)
+    final_results_for_not_dropping = counter_of_not_dropping.most_common(50)
+    formatted_not_dropping = str(final_results_for_not_dropping) \
+        .replace('),', '\n') \
+        .replace('(', '   ') \
+        .replace('[', ' ') \
+        .replace(']', ' ')
+    write_results_in_file(formatted_not_dropping, "\n'number', count of not dropping out\n")
